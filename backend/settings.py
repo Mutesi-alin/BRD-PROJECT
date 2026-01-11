@@ -48,7 +48,9 @@ INSTALLED_APPS = [
     'clients',
     'projects',
     'loans',
-    'disbursement'
+    'disbursement',
+        'rest_framework.authtoken'
+
 ]
 
 MIDDLEWARE = [
@@ -151,7 +153,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+       'rest_framework.permissions.AllowAny', 
     ],
 }
 STATIC_URL = '/static/'
