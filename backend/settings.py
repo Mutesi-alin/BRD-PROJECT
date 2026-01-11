@@ -26,11 +26,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'unsafe-secret-for-dev')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.environ.get(
-    'ALLOWED_HOSTS',
-    'localhost,127.0.0.1'
-).split(',')
-
+ALLOWED_HOSTS = [
+    'localhost',
+    '127.0.0.1',
+    'brd-project.onrender.com',
+    '.onrender.com',
+]
 
 # Application definition
 
@@ -156,3 +157,9 @@ REST_FRAMEWORK = {
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    'https://brd-project.onrender.com',
+]
+CSRF_TRUSTED_ORIGINS = [
+    'https://brd-project.onrender.com',
+]
