@@ -2,32 +2,39 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 class User(AbstractUser):
-    ROLE_CHOICES = (
-        ('ADMIN', 'Admin'),
-        ('LOAN', 'Loan Officer'),
-        ('PROJECT', 'Project Officer'),
-        ('FINANCE', 'Finance Officer'),
-        ('MANAGEMENT', 'Management'),
-    )
-
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    ADMIN = 'ADMIN'
+    LOAN_OFFICER = 'LOAN_OFFICER'
+    PROJECT_OFFICER = 'PROJECT_OFFICER'
+    FINANCE_OFFICER = 'FINANCE_OFFICER'
+    MANAGEMENT = 'MANAGEMENT'
     
-    # Add these to fix the clash
+    ROLE_CHOICES = [
+        (ADMIN, 'Admin'),
+        (LOAN_OFFICER, 'Loan Officer'),
+        (PROJECT_OFFICER, 'Project Officer'),
+        (FINANCE_OFFICER, 'Finance Officer'),
+        (MANAGEMENT, 'Management'),
+    ]
+
+    email = models.EmailField(unique=True)  # ⭐ REQUIRED
+    phone_number = models.CharField(max_length=20, blank=True)
+    role = models.CharField(max_length=30, choices=ROLE_CHOICES, default=LOAN_OFFICER)
+
     groups = models.ManyToManyField(
         'auth.Group',
         related_name='custom_user_set',
         blank=True,
-        help_text='The groups this user belongs to.',
         verbose_name='groups',
     )
-    
     user_permissions = models.ManyToManyField(
         'auth.Permission',
         related_name='custom_user_set',
         blank=True,
-        help_text='Specific permissions for this user.',
         verbose_name='user permissions',
     )
 
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
+
     def __str__(self):
-        return f"{self.username} - {self.role}"
+        return f"{self.get_full_name()} - {self.role}"

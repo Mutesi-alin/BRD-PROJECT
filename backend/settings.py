@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+AUTH_USER_MODEL = 'user.User'
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -24,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'unsafe-secret-for-dev')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = True  
 
 ALLOWED_HOSTS = [
     'localhost',
@@ -49,7 +50,7 @@ INSTALLED_APPS = [
     'projects',
     'loans',
     'disbursement',
-        'rest_framework.authtoken'
+    'rest_framework.authtoken'
 
 ]
 
