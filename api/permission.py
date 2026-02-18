@@ -1,46 +1,80 @@
-# api/permission.py
+
 from rest_framework import permissions
 
 
-class IsAdmin(permissions.BasePermission):
-    """Allow access only to Admin users"""
+class RolePermission(permissions.BasePermission):
+    """
+    Base permission class for role-based access
+    """
+    allowed_roles = []
+
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'ADMIN'
+        return (
+            request.user.is_authenticated
+            and request.user.role in self.allowed_roles
+        )
 
 
-class IsLoanOfficer(permissions.BasePermission):
-    """Allow access to Loan Officers and Admins"""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['ADMIN', 'LOAN_OFFICER']
+class IsAdmin(RolePermission):
+    allowed_roles = ['ADMIN']
 
 
-class IsProjectOfficer(permissions.BasePermission):
-    """Allow access to Project Officers and Admins"""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['ADMIN', 'PROJECT_OFFICER']
+class IsLoanOfficer(RolePermission):
+    allowed_roles = ['ADMIN', 'LOAN_OFFICER']
 
 
-class IsFinanceOfficer(permissions.BasePermission):
-    """Allow access to Finance Officers and Admins"""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['ADMIN', 'FINANCE_OFFICER']
+class IsProjectOfficer(RolePermission):
+    allowed_roles = ['ADMIN', 'PROJECT_OFFICER']
 
 
-class IsManagementOrAdmin(permissions.BasePermission):
-    """Allow access to Management and Admin users"""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ['ADMIN', 'MANAGEMENT']
+class IsFinanceOfficer(RolePermission):
+    allowed_roles = ['ADMIN', 'FINANCE_OFFICER']
 
 
-class ReadOnlyForManagement(permissions.BasePermission):
-    """Management users can only read (GET), not modify"""
+class IsManagementOrAdmin(RolePermission):
+    allowed_roles = ['ADMIN', 'MANAGEMENT']
+
+
+
+class IsLoanOfficerOrAdmin(permissions.BasePermission):
+    """
+    Loan Officers and Admins can create loans
+    """
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        
+        return request.user.role in ['ADMIN', 'LOAN_OFFICER']
+
+
+class IsProjectOfficerOrAdmin(permissions.BasePermission):
+    """
+    Project Officers and Admins can create projects
+    """
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return request.user.role in ['ADMIN', 'PROJECT_OFFICER']
+
+
+class IsFinanceOfficerOrAdmin(permissions.BasePermission):
+    """
+    Finance Officers and Admins can create disbursements
+    """
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return request.user.role in ['ADMIN', 'FINANCE_OFFICER']
+
+
+class ReadOnlyForManagement(permissions.BasePermission):
+    """
+    Management users can only read (GET, HEAD, OPTIONS)
+    """
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+
         if request.user.role == 'MANAGEMENT':
-            # Management can only use safe methods (GET, HEAD, OPTIONS)
             return request.method in permissions.SAFE_METHODS
-        
-        # For other roles, allow all methods
+
         return True
