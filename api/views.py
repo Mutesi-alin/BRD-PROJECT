@@ -1,12 +1,17 @@
 
-import logging
 
+import logging
+from rest_framework.exceptions import ValidationError
 from rest_framework import viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
+from django.db import transaction
+from django.db.models import Sum
+from rest_framework.decorators import action
+from decimal import Decimal
 
 from clients.models import Client
 from projects.models import Project
@@ -46,9 +51,7 @@ class RegisterView(APIView):
             try:
                 user = serializer.save()
                 token, _ = Token.objects.get_or_create(user=user)
-
                 logger.info(f'User registered successfully: {user.email}')
-
                 return Response({
                     'message': 'Registration successful',
                     'token': token.key,
@@ -88,9 +91,7 @@ class LoginView(APIView):
 
         if django_user:
             token, _ = Token.objects.get_or_create(user=django_user)
-
             logger.info(f'User logged in successfully: {email}')
-
             return Response({
                 'message': 'Login successful',
                 'token': token.key,
@@ -110,9 +111,7 @@ class LogoutView(APIView):
     def post(self, request):
         try:
             request.user.auth_token.delete()
-
             logger.info(f'User logged out: {request.user.email}')
-
             return Response(
                 {'message': 'Logout successful'},
                 status=status.HTTP_200_OK
@@ -120,7 +119,6 @@ class LogoutView(APIView):
 
         except Exception as e:
             logger.error(f'Logout failed: {str(e)}')
-
             return Response(
                 {'error': 'Logout failed'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -173,9 +171,7 @@ class RoleUpdateView(APIView):
                 user = User.objects.get(id=user_id)
                 user.role = new_role
                 user.save()
-
                 logger.info(f"Role updated for user {user.email}: {new_role}")
-
                 return Response(
                     {
                         "message": f"Role updated to {new_role} successfully",
@@ -186,7 +182,6 @@ class RoleUpdateView(APIView):
 
             except User.DoesNotExist:
                 logger.error(f"User with ID {user_id} not found")
-
                 return Response(
                     {"detail": "User not found"},
                     status=status.HTTP_404_NOT_FOUND
@@ -210,7 +205,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
     serializer_class = ProjectSerializer
 
     def get_permissions(self):
-        if self.action in ['create']:
+        if self.action == 'create':
             permission_classes = [IsAuthenticated, IsProjectOfficerOrAdmin]
         elif self.action in ['update', 'partial_update']:
             permission_classes = [IsAuthenticated, IsManagementOrAdmin]
@@ -219,35 +214,39 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def get_serializer(self, *args, **kwargs):
-        """Override to ensure context is always passed"""
         kwargs['context'] = self.get_serializer_context()
         return super().get_serializer(*args, **kwargs)
 
     def get_serializer_context(self):
-        """Pass request context to serializer"""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+
 
 class LoanViewSet(viewsets.ModelViewSet):
     queryset = Loan.objects.all()
     serializer_class = LoanSerializer
 
     def get_permissions(self):
-       
-        
         if self.action == 'create':
             permission_classes = [IsAuthenticated, IsLoanOfficerOrAdmin]
         elif self.action in ['update', 'partial_update']:
             permission_classes = [IsAuthenticated, IsManagementOrAdmin]
         else:
             permission_classes = [IsAuthenticated]
-      
         return [permission() for permission in permission_classes]
-    
+
+    def get_serializer(self, *args, **kwargs):
+        kwargs['context'] = self.get_serializer_context()
+        return super().get_serializer(*args, **kwargs)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
 class DisbursementViewSet(viewsets.ModelViewSet):
-    queryset = Disbursement.objects.all()
+    queryset = Disbursement.objects.all().select_related('loan', 'created_by')
     serializer_class = DisbursementSerializer
 
     def get_permissions(self):
@@ -255,12 +254,76 @@ class DisbursementViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
 
     def get_serializer(self, *args, **kwargs):
-        """Override to ensure context is always passed"""
         kwargs['context'] = self.get_serializer_context()
         return super().get_serializer(*args, **kwargs)
 
     def get_serializer_context(self):
-        """Pass request context to serializer"""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
+    
+    @transaction.atomic
+    def perform_create(self, serializer):
+      
+        loan = serializer.validated_data['loan']
+        amount = serializer.validated_data['amount']
+        
+        loan = Loan.objects.select_for_update().get(pk=loan.pk)
+        
+    
+        total_disbursed = Disbursement.objects.filter(
+            loan=loan
+        ).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+        
+        new_total = total_disbursed + amount
+        
+        # Double-check for over-disbursement
+        if new_total > loan.loan_amount:
+            remaining = loan.loan_amount - total_disbursed
+            logger.error(
+                f"Race condition caught! Loan {loan.id}: "
+                f"Remaining {remaining}, Attempted {amount}"
+            )
+            raise ValidationError({
+                'amount': (
+                    f"Race condition prevented! "
+                    f"Remaining amount: {remaining} RWF. "
+                    f"Another disbursement was just processed."
+                )
+            })
+        
+        disbursement = serializer.save()
+        
+        logger.info(
+            f"Disbursement {disbursement.id} created for Loan {loan.id} "
+            f"by {self.request.user.email}"
+        )
+        
+        return disbursement
+    
+    @action(detail=False, methods=['get'], url_path='loan-summary')
+    def loan_summary(self, request):
+      
+        loan_id = request.query_params.get('loan_id')
+        
+        if not loan_id:
+            return Response({'error': 'loan_id required'}, status=400)
+        
+        try:
+            loan = Loan.objects.get(pk=loan_id)
+        except Loan.DoesNotExist:
+            return Response({'error': 'Loan not found'}, status=404)
+        
+        total_disbursed = Disbursement.objects.filter(loan=loan).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+        
+        return Response({
+            'loan_id': loan.id,
+            'loan_amount': str(loan.loan_amount),
+            'total_disbursed': str(total_disbursed),
+            'remaining': str(loan.loan_amount - total_disbursed),
+            'disbursement_count': Disbursement.objects.filter(loan=loan).count(),
+        })
